@@ -1,0 +1,10 @@
+--- media_build.orig/v4l/scripts/make_makefile.pl	2018-10-01 20:01:42.504646417 +0100
++++ media_build/v4l/scripts/make_makefile.pl	2018-10-01 20:54:52.968594153 +0100
+@@ -257,7 +257,6 @@
+ 	print OUT "fi;\n\n";
+ }
+ print OUT "\t@echo\n";
+-print OUT "\t/sbin/depmod -a \$(KERNELRELEASE) \$(if \$(DESTDIR),-b \$(DESTDIR))\n\n";
+ 
+ # Creating Remove rule
+ print OUT "media-rminstall::\n";

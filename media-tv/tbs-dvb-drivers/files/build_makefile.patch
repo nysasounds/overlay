@@ -1,0 +1,20 @@
+--- media_build.orig/v4l/Makefile	2018-10-01 20:01:42.501646407 +0100
++++ media_build/v4l/Makefile	2018-10-01 21:06:52.810493944 +0100
+@@ -192,7 +192,7 @@
+   inst-m	:= $(obj-m)
+ endif
+ 
+-v4l_modules := $(shell /sbin/lsmod|cut -d' ' -f1 ) $(patsubst %.ko,%,$(inst-m))
++v4l_modules := $(shell /bin/lsmod|cut -d' ' -f1 ) $(patsubst %.ko,%,$(inst-m))
+ 
+ #################################################
+ # locales seem to cause trouble sometimes.
+@@ -425,8 +425,6 @@
+ 	-install -d $(DEST)
+ 	-install -m 644 -c $(inst-m) $(DEST)
+ 
+-	/sbin/depmod -a ${KERNELRELEASE}
+-
+ #################################################
+ # Tree management rules
+ 

@@ -1,0 +1,11 @@
+--- 1/linux-tbs-drivers/v4l/Makefile	2012-03-31 18:40:13.277996318 +0100
++++ linux-tbs-drivers/v4l/Makefile	2012-03-31 22:32:40.397996318 +0100
+@@ -398,8 +398,6 @@
+ 	-install -d $(DEST)
+ 	-install -m 644 -c $(inst-m) $(DEST)
+ 
+-	/sbin/depmod -a ${KERNELRELEASE}
+-
+ #################################################
+ # Tree management rules
+
