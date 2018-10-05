@@ -14,7 +14,7 @@ SRC_URI="http://www.tbsdtv.com/download/document/common/tbs-linux-drivers_v${MY_
 LICENSE="GPL-2"
 SLOT="0"
 KEYWORDS="~x86 ~amd64"
-IUSE=""
+IUSE="nysasounds"
 DEPEND="virtual/linux-sources \
 app-arch/unzip \
 "
@@ -46,6 +46,13 @@ src_unpack() {
 
 src_configure() {
 	cd ${WORKDIR}/${DVB_TBSAPI}
+	# Prevent amd64 instead of x86_64 being used as system arch in linux tree #
+	unset ARCH
+	# Work around for seemingly odd kernel version detection #
+	elog "Forcing v4l Makefile to detect correct kernel version via symlink"
+	head -3 /usr/src/linux/Makefile > v4l/.version
+	echo "KERNELRELEASE:=${KV_FULL}" >> v4l/.version
+	# Run the appropriate set-up script depending on linux kernel arch and version #
 	if use x86; then
 		if [ "${KV_FULL#3}" != "$KV_FULL" ]; then
 			elog "Setting up for linux x86 3.x"
@@ -58,6 +65,10 @@ src_configure() {
 		elog "Setting up for linux x86_64 all"
 		elog $(./v4l/tbs-x86_64.sh)
 	fi
+	if use nysasounds ; then
+		einfo "Applying nysaosunds default config to v4v tree"
+		epatch "${FILESDIR}/default-config.patch"
+	fi
 }
 
 src_compile() {
@@ -65,6 +76,7 @@ src_compile() {
 
 	elog "post compile patches necessary..."
 	epatch "${FILESDIR}/depmod_make-media.patch"
+	epatch "${FILESDIR}/no-firmware.patch"
 }
 
 src_install() {
@@ -74,5 +86,5 @@ src_install() {
 pkg_postinst() {
 	linux-mod_pkg_postinst
 	ewarn "This installs a whole new v4l kernel tree"
-	ewarn "For consistency, you need to reboot after install these modules!"
+	ewarn "For consistency, you need to reboot after installing these modules!"
 }
