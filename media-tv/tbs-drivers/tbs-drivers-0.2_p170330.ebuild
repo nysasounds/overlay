@@ -18,7 +18,10 @@ IUSE="nysasounds"
 DEPEND="virtual/linux-sources \
 app-arch/unzip \
 "
-RDEPEND=""
+RDEPEND="\
+virtual/linux-sources \
+sys-kernel/linux-firmware \
+"
 
 S=${WORKDIR}/${DVB_TBSAPI}
 
