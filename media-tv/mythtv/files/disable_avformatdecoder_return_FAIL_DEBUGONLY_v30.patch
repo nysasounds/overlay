@@ -1,0 +1,11 @@
+--- a/mythtv/libs/libmythtv/avformatdecoder.cpp	2019-07-25 10:56:55.000000000 +0100
++++ b/mythtv/libs/libmythtv/avformatdecoder.cpp	2019-08-13 17:58:46.657941971 +0100
+@@ -207,7 +207,7 @@
+ 
+ #define FAIL(errmsg) do {                                     \
+     LOG(VB_PLAYBACK, LOG_DEBUG, LOC + (errmsg));              \
+-    return 0;                                                 \
++    return 1;                                                 \
+ } while (0)
+ 
+     switch (st->codecpar->codec_type)
