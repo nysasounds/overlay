@@ -33,6 +33,8 @@ FIRMWARE_EXCLUDES=(
 	dvb-usb-it9135-01.fw
 	dvb-usb-it9135-02.fw
 	dvb-usb-terratec-h5-drxk.fw
+	dvb_nova_12mhz.inp
+	dvb_nova_12mhz_b0.inp
 	sms1xxx-hcw-55xxx-dvbt-02.fw
 	sms1xxx-hcw-55xxx-isdbt-02.fw
 	sms1xxx-nova-a-dvbt-01.fw

@@ -15,6 +15,7 @@ MEDIA_BUILD_EGIT_REPO_URI="https://github.com/tbsdtv/media_build.git"
 MEDIA_BUILD_EGIT_BRANCH="master"
 
 EGIT_CLONE_TYPE="shallow"
+EGIT_MIN_CLONE_TYPE="shallow"
 
 LICENSE="GPL-2"
 SLOT="0"
