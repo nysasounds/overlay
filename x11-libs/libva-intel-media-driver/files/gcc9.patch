@@ -1,0 +1,10 @@
+--- orig/media_driver/cmake/linux/media_compile_flags_linux.cmake	2019-12-23 13:54:00.546365899 +0000
++++ new/media_driver/cmake/linux/media_compile_flags_linux.cmake	2019-12-23 13:54:04.523440243 +0000
+@@ -32,7 +32,6 @@
+     -Wno-overflow
+     -Wno-parentheses
+     -Wno-delete-incomplete
+-    -Werror=implicit-function-declaration
+     -Werror=address
+     -Werror=format-security
+     -Werror=non-virtual-dtor
