@@ -56,6 +56,8 @@ src_prepare() {
 	# lsmod path and remove unwanted depmod #
 	eapply "${FILESDIR}/build_makefile.patch"
 	eapply "${FILESDIR}/build_makefile-media.patch"
+	# https://www.tbsdtv.com/forum/viewtopic.php?f=87&t=25419&start=10#p55682
+	eapply "${FILESDIR}/build_v4l_versions.patch"
 
 	# Set target kernel version #
 	echo "VERSION = ${KV_MAJOR}" > v4l/.version

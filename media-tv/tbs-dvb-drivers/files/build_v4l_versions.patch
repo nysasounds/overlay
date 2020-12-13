@@ -1,0 +1,18 @@
+--- media_build.orig/v4l/versions.txt	2020-12-13 14:12:51.036715602 +0000
++++ media_build/v4l/versions.txt	2020-12-13 14:11:29.103633095 +0000
+@@ -2,6 +2,7 @@
+ [9.255.255]
+ VIDEO_IPU3_IMGU
+ INTEL_ATOMISP
++VIDEO_OV9650
+ 
+ [5.5]
+ # lots of kAPI changes in 5.6, so disable for older kernels
+@@ -24,7 +25,6 @@
+ [4.19.0]
+ # Needs devm_regmap_init_sccb
+ VIDEO_OV772X
+-VIDEO_OV9650
+ # Needs gpiod_set_consumer_name
+ VIDEO_MAX9286
+ 
