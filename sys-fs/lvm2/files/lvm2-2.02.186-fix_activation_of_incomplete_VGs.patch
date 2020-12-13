@@ -1,0 +1,326 @@
+From 6b12930860a993624d6325aec2e9c561f4412aa9 Mon Sep 17 00:00:00 2001
+From: David Teigland <teigland@redhat.com>
+Date: Tue, 3 Sep 2019 15:14:08 -0500
+Subject: [PATCH] pvscan: fix activation of incomplete VGs
+
+For a long time there has been a bug in the activation
+done by the initial pvscan (which scans all devs to
+initialize the lvmetad cache.)  It was attempting to
+activate all VGs, even those that were not complete.
+
+lvmetad tells pvscan when a VG is complete, and pvscan
+needs to use this information to decide which VGs to
+activate.
+
+When there are problems that prevent lvmetad from being
+used (e.g. lvmetad is disabled or not running), pvscan
+activation cannot use lvmetad to determine when a VG
+is complete, so it now checks if devices are present
+for all PVs in the VG before activating.
+
+(The recent commit "pvscan: avoid redundant activation"
+could make this bug more apparent because redundant
+activations can cover up the effect of activating an
+incomplete VG and missing some LV activations.)
+---
+ lib/cache/lvmetad.c   | 15 ++++++++----
+ lib/cache/lvmetad.h   |  2 +-
+ tools/lvmcmdline.c    |  2 +-
+ tools/lvscan.c        |  2 +-
+ tools/pvscan.c        | 65 ++++++++++++++++++++++++++++++++++++++++++++++-----
+ tools/vgcfgrestore.c  |  2 +-
+ tools/vgimport.c      |  2 +-
+ tools/vgimportclone.c |  2 +-
+ tools/vgscan.c        |  2 +-
+ 9 files changed, 77 insertions(+), 17 deletions(-)
+
+diff --git a/lib/cache/lvmetad.c b/lib/cache/lvmetad.c
+index d7e798d..d242260 100644
+--- a/lib/cache/lvmetad.c
++++ b/lib/cache/lvmetad.c
+@@ -1702,6 +1702,13 @@ int lvmetad_pv_found(struct cmd_context *cmd, const struct id *pvid, struct devi
+ 		changed = daemon_reply_int(reply, "changed", 0);
+ 	}
+ 
++	if (vg && vg->system_id && vg->system_id[0] &&
++	    cmd->system_id && cmd->system_id[0] &&
++	    strcmp(vg->system_id, cmd->system_id)) {
++		log_debug_lvmetad("Ignore foreign VG %s on %s", vg->name , dev_name(dev));
++		goto out;
++	}
++
+ 	/*
+ 	 * If lvmetad now sees all PVs in the VG, it returned the
+ 	 * "complete" status string.  Add this VG name to the list
+@@ -1732,7 +1739,7 @@ int lvmetad_pv_found(struct cmd_context *cmd, const struct id *pvid, struct devi
+ 				log_error("str_list_add failed");
+ 		}
+ 	}
+-
++out:
+ 	daemon_reply_destroy(reply);
+ 
+ 	return result;
+@@ -2333,7 +2340,7 @@ bad:
+  * generally revert disk scanning and not use lvmetad.
+  */
+ 
+-int lvmetad_pvscan_all_devs(struct cmd_context *cmd, int do_wait)
++int lvmetad_pvscan_all_devs(struct cmd_context *cmd, int do_wait, struct dm_list *found_vgnames)
+ {
+ 	struct device_list *devl, *devl2;
+ 	struct dm_list scan_devs;
+@@ -2415,7 +2422,7 @@ int lvmetad_pvscan_all_devs(struct cmd_context *cmd, int do_wait)
+ 
+ 		dm_list_del(&devl->list);
+ 
+-		ret = lvmetad_pvscan_single(cmd, devl->dev, NULL, NULL);
++		ret = lvmetad_pvscan_single(cmd, devl->dev, found_vgnames, NULL);
+ 
+ 		label_scan_invalidate(devl->dev);
+ 
+@@ -2758,7 +2765,7 @@ void lvmetad_validate_global_cache(struct cmd_context *cmd, int force)
+ 	 * we rescanned for the token, and the time we acquired the global
+ 	 * lock.)
+ 	 */
+-	if (!lvmetad_pvscan_all_devs(cmd, 1)) {
++	if (!lvmetad_pvscan_all_devs(cmd, 1, NULL)) {
+ 		log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 		lvmetad_make_unused(cmd);
+ 		return;
+diff --git a/lib/cache/lvmetad.h b/lib/cache/lvmetad.h
+index 73c2645..55ce16a 100644
+--- a/lib/cache/lvmetad.h
++++ b/lib/cache/lvmetad.h
+@@ -151,7 +151,7 @@ int lvmetad_pvscan_single(struct cmd_context *cmd, struct device *dev,
+ 			  struct dm_list *found_vgnames,
+ 			  struct dm_list *changed_vgnames);
+ 
+-int lvmetad_pvscan_all_devs(struct cmd_context *cmd, int do_wait);
++int lvmetad_pvscan_all_devs(struct cmd_context *cmd, int do_wait, struct dm_list *found_vgnames);
+ 
+ int lvmetad_vg_clear_outdated_pvs(struct volume_group *vg);
+ void lvmetad_validate_global_cache(struct cmd_context *cmd, int force);
+diff --git a/tools/lvmcmdline.c b/tools/lvmcmdline.c
+index 0840c65..6a1ab11 100644
+--- a/tools/lvmcmdline.c
++++ b/tools/lvmcmdline.c
+@@ -2980,7 +2980,7 @@ int lvm_run_command(struct cmd_context *cmd, int argc, char **argv)
+ 	 */
+ 	if (lvmetad_used() && !_cmd_no_lvmetad_autoscan(cmd)) {
+ 		if (cmd->include_foreign_vgs || !lvmetad_token_matches(cmd)) {
+-			if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, cmd->include_foreign_vgs ? 1 : 0)) {
++			if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, cmd->include_foreign_vgs ? 1 : 0, NULL)) {
+ 				log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 				lvmetad_make_unused(cmd);
+ 			}
+diff --git a/tools/lvscan.c b/tools/lvscan.c
+index c38208a..34e9f31 100644
+--- a/tools/lvscan.c
++++ b/tools/lvscan.c
+@@ -103,7 +103,7 @@ int lvscan(struct cmd_context *cmd, int argc, char **argv)
+ 
+ 	/* Needed because this command has NO_LVMETAD_AUTOSCAN. */
+ 	if (lvmetad_used() && (!lvmetad_token_matches(cmd) || lvmetad_is_disabled(cmd, &reason))) {
+-		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0)) {
++		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0, NULL)) {
+ 			log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 			lvmetad_make_unused(cmd);
+ 		}
+diff --git a/tools/pvscan.c b/tools/pvscan.c
+index c21845c..2e7a864 100644
+--- a/tools/pvscan.c
++++ b/tools/pvscan.c
+@@ -38,6 +38,7 @@ struct pvscan_params {
+ 
+ struct pvscan_aa_params {
+ 	int refresh_all;
++	int all_vgs;
+ 	unsigned int activate_errors;
+ 	struct dm_list changed_vgnames;
+ };
+@@ -223,6 +224,28 @@ void online_vg_file_remove(const char *vgname)
+ 	unlink(path);
+ }
+ 
++static void _online_files_remove(const char *dirpath)
++{
++	char path[PATH_MAX];
++	DIR *dir;
++	struct dirent *de;
++
++	if (!(dir = opendir(dirpath)))
++		return;
++
++	while ((de = readdir(dir))) {
++		if (de->d_name[0] == '.')
++			continue;
++
++		memset(path, 0, sizeof(path));
++		snprintf(path, sizeof(path), "%s/%s", dirpath, de->d_name);
++		if (unlink(path))
++			log_sys_debug("unlink", path);
++	}
++	if (closedir(dir))
++		log_sys_debug("closedir", dirpath);
++}
++
+ /*
+  * pvscan --cache does not perform any lvmlockd locking, and
+  * pvscan --cache -aay skips autoactivation in lockd VGs.
+@@ -271,6 +294,8 @@ static int _pvscan_autoactivate_single(struct cmd_context *cmd, const char *vg_n
+ 				       struct volume_group *vg, struct processing_handle *handle)
+ {
+ 	struct pvscan_aa_params *pp = (struct pvscan_aa_params *)handle->custom_handle;
++	struct pv_list *pvl;
++	int incomplete = 0;
+ 
+ 	if (vg_is_clustered(vg))
+ 		return ECMD_PROCESSED;
+@@ -281,6 +306,24 @@ static int _pvscan_autoactivate_single(struct cmd_context *cmd, const char *vg_n
+ 	if (is_lockd_type(vg->lock_type))
+ 		return ECMD_PROCESSED;
+ 
++	/*
++	 * This all_vgs case only happens in fallback cases when there's some
++	 * problem preventing the use of lvmetad.  When lvmetad can be properly
++	 * used, the found_vgnames list should have the names of complete VGs
++	 * that should be activated.
++	 */
++	if (pp->all_vgs) {
++		dm_list_iterate_items(pvl, &vg->pvs) {
++			if (!pvl->pv->dev)
++				incomplete++;
++		}
++
++		if (incomplete) {
++			log_print("pvscan[%d] VG %s incomplete (need %d).", getpid(), vg->name, incomplete);
++			return ECMD_PROCESSED;
++		}
++	}
++
+ 	log_debug("pvscan autoactivating VG %s.", vg_name);
+ 
+ #if 0
+@@ -377,6 +420,7 @@ static int _pvscan_autoactivate(struct cmd_context *cmd, struct pvscan_aa_params
+ 	if (all_vgs) {
+ 		cmd->cname->flags |= ALL_VGS_IS_DEFAULT;
+ 		pp->refresh_all = 1;
++		pp->all_vgs = 1;
+ 	}
+ 
+ 	ret = process_each_vg(cmd, 0, NULL, NULL, vgnames, 0, 0, handle, _pvscan_autoactivate_single);
+@@ -463,17 +507,23 @@ static int _pvscan_cache(struct cmd_context *cmd, int argc, char **argv)
+ 	 * Scan all devices when no args are given.
+ 	 */
+ 	if (!argc && !devno_args) {
++		_online_files_remove(_vgs_online_dir);
++
+ 		log_verbose("Scanning all devices.");
+ 
+-		if (!lvmetad_pvscan_all_devs(cmd, 1)) {
++		if (!lvmetad_pvscan_all_devs(cmd, 1, &found_vgnames)) {
+ 			log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 			lvmetad_make_unused(cmd);
++			all_vgs = 1;
+ 		}
+ 		if (lvmetad_used() && lvmetad_is_disabled(cmd, &reason)) {
+ 			log_warn("WARNING: Not using lvmetad because %s.", reason);
+ 			lvmetad_make_unused(cmd);
++			all_vgs = 1;
+ 		}
+-		all_vgs = 1;
++
++		if (!all_vgs && do_activate)
++			log_print("pvscan[%d] activating all complete VGs (no args)", getpid());
+ 		goto activate;
+ 	}
+ 
+@@ -485,7 +535,7 @@ static int _pvscan_cache(struct cmd_context *cmd, int argc, char **argv)
+ 	 * never scan any devices other than those specified.
+ 	 */
+ 	if (!lvmetad_token_matches(cmd)) {
+-		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0)) {
++		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0, &found_vgnames)) {
+ 			log_warn("WARNING: Not updating lvmetad because cache update failed.");
+ 			ret = ECMD_FAILED;
+ 			goto out;
+@@ -493,9 +543,12 @@ static int _pvscan_cache(struct cmd_context *cmd, int argc, char **argv)
+ 		if (lvmetad_used() && lvmetad_is_disabled(cmd, &reason)) {
+ 			log_warn("WARNING: Not using lvmetad because %s.", reason);
+ 			lvmetad_make_unused(cmd);
++			all_vgs = 1;
++			log_print("pvscan[%d] activating all directly (lvmetad disabled from scan) %s", getpid(), dev_arg ?: "");
+ 		}
+-		log_print("pvscan[%d] activating all directly (lvmetad token) %s", getpid(), dev_arg ?: "");
+-		all_vgs = 1;
++
++		if (!all_vgs)
++			log_print("pvscan[%d] activating all complete VGs for init", getpid());
+ 		goto activate;
+ 	}
+ 
+@@ -807,7 +860,7 @@ int pvscan(struct cmd_context *cmd, int argc, char **argv)
+ 
+ 	/* Needed because this command has NO_LVMETAD_AUTOSCAN. */
+ 	if (lvmetad_used() && (!lvmetad_token_matches(cmd) || lvmetad_is_disabled(cmd, &reason))) {
+-		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0)) {
++		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, 0, NULL)) {
+ 			log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 			lvmetad_make_unused(cmd);
+ 		}
+diff --git a/tools/vgcfgrestore.c b/tools/vgcfgrestore.c
+index 48a2fa4..e7f9848 100644
+--- a/tools/vgcfgrestore.c
++++ b/tools/vgcfgrestore.c
+@@ -177,7 +177,7 @@ rescan:
+ 		}
+ 		if (!refresh_filters(cmd))
+ 			stack;
+-		if (!lvmetad_pvscan_all_devs(cmd, 1)) {
++		if (!lvmetad_pvscan_all_devs(cmd, 1, NULL)) {
+ 			log_warn("WARNING: Failed to scan devices.");
+ 			log_warn("WARNING: Update lvmetad with pvscan --cache.");
+ 			goto out;
+diff --git a/tools/vgimport.c b/tools/vgimport.c
+index ea50198..d4455ec 100644
+--- a/tools/vgimport.c
++++ b/tools/vgimport.c
+@@ -96,7 +96,7 @@ int vgimport(struct cmd_context *cmd, int argc, char **argv)
+ 	 * import it.
+ 	 */
+ 	if (lvmetad_used()) {
+-		if (!lvmetad_pvscan_all_devs(cmd, 1)) {
++		if (!lvmetad_pvscan_all_devs(cmd, 1, NULL)) {
+ 			log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 			lvmetad_make_unused(cmd);
+ 		}
+diff --git a/tools/vgimportclone.c b/tools/vgimportclone.c
+index c4c5d4c..ac3766b 100644
+--- a/tools/vgimportclone.c
++++ b/tools/vgimportclone.c
+@@ -377,7 +377,7 @@ out:
+ 		if (!refresh_filters(cmd))
+ 			stack;
+ 
+-		if (!lvmetad_pvscan_all_devs(cmd, 1)) {
++		if (!lvmetad_pvscan_all_devs(cmd, 1, NULL)) {
+ 			log_warn("WARNING: Failed to scan devices.");
+ 			log_warn("WARNING: Update lvmetad with pvscan --cache.");
+ 		}
+diff --git a/tools/vgscan.c b/tools/vgscan.c
+index f9fa382..a1ef264 100644
+--- a/tools/vgscan.c
++++ b/tools/vgscan.c
+@@ -101,7 +101,7 @@ int vgscan(struct cmd_context *cmd, int argc, char **argv)
+ 		log_verbose("Ignoring vgscan --cache command because lvmetad is not in use.");
+ 
+ 	if (lvmetad_used() && (arg_is_set(cmd, cache_long_ARG) || !lvmetad_token_matches(cmd) || lvmetad_is_disabled(cmd, &reason))) {
+-		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, arg_is_set(cmd, cache_long_ARG))) {
++		if (lvmetad_used() && !lvmetad_pvscan_all_devs(cmd, arg_is_set(cmd, cache_long_ARG), NULL)) {
+ 			log_warn("WARNING: Not using lvmetad because cache update failed.");
+ 			lvmetad_make_unused(cmd);
+ 		}
+-- 
+2.9.3
+
