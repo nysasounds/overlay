@@ -1,7 +1,7 @@
 # Copyright 1999-2019 Gentoo Authors
 # Distributed under the terms of the GNU General Public License v2
 
-EAPI=6
+EAPI=7
 PYTHON_COMPAT=( python3_{7..8} )
 
 # Latest fixes/30 - Thu Jul 25 11:44:28 2019 +0200
