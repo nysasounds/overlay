@@ -2,7 +2,7 @@
 # Distributed under the terms of the GNU General Public License v2
 
 EAPI=6
-PYTHON_COMPAT=( python2_7 )
+PYTHON_COMPAT=( python3_{7..8} )
 
 # git diff --relative=mythtv v0.27.6.. > ~/mythtv-0.27.6/patches/mythtv.patch
 BACKPORTS="d8a2db77f5731cf32c6d31127452391c6cf7f91f"

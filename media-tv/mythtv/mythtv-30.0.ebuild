@@ -2,7 +2,7 @@
 # Distributed under the terms of the GNU General Public License v2
 
 EAPI=6
-PYTHON_COMPAT=( python2_7 )
+PYTHON_COMPAT=( python3_{7..8} )
 
 # Latest fixes/30 - Thu Jul 25 11:44:28 2019 +0200
 BACKPORTS="e094a020179aba2d955a21b8fd067231a87e3334"
